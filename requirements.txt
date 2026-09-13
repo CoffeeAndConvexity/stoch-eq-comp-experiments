@@ -1,0 +1,7 @@
+cvxpy
+fancyimpute
+matplotlib
+mosek
+numpy
+pandas
+scipy
