@@ -1,3 +1,6 @@
+import argparse
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 from fancyimpute import SoftImpute
@@ -10,36 +13,47 @@ from fancyimpute import SoftImpute
 # -----------------------------------------------------------
 
 
-url = "https://raw.githubusercontent.com/sidooms/MovieTweetings/master/snapshots/200K/"
+DEFAULT_URL = "https://raw.githubusercontent.com/sidooms/MovieTweetings/master/snapshots/200K/"
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
-users = pd.read_csv(url + "users.dat", header=None, sep='::', engine='python')
-movies = pd.read_csv(url + 'movies.dat', header=None, sep='::', engine='python')
-ratings = pd.read_csv(url + 'ratings.dat', header=None, sep='::', engine='python')
 
-ratings = ratings.rename(columns={0: "user", 1: "movie", 2: "rate", 3: "timestamp"})
+def process_movie_data(base_url=DEFAULT_URL, output=REPO_ROOT / 'data' / 'movie_rating.npy', min_ratings=50):
+    users = pd.read_csv(base_url + "users.dat", header=None, sep='::', engine='python')
+    movies = pd.read_csv(base_url + 'movies.dat', header=None, sep='::', engine='python')
+    ratings = pd.read_csv(base_url + 'ratings.dat', header=None, sep='::', engine='python')
+    ratings = ratings.rename(columns={0: "user", 1: "movie", 2: "rate", 3: "timestamp"})
 
-freq_users = ratings.user.value_counts()
-freq_movies = ratings.movie.value_counts()
+    freq_users = ratings.user.value_counts()
+    freq_movies = ratings.movie.value_counts()
+    kept_users = [i for i in users[0] if freq_users.get(i, 0) >= min_ratings]
+    kept_movies = [j for j in movies[0] if freq_movies.get(j, 0) >= min_ratings]
+    users_index = {user: index for index, user in enumerate(kept_users)}
+    movies_index = {movie: index for index, movie in enumerate(kept_movies)}
 
-num_users = sum(freq_users >= 50)
-num_movies = sum(freq_movies >= 50)
-num_ratings = len(ratings)
-users_ = [i for i in users[0] if freq_users[i] >= 50]
-users_index = {users_[i]: i for i in range(len(users_))}
-movies_ = [j for j in movies[0] if freq_movies[j] >= 50]
-movies_index = {movies_[j]: j for j in range(len(movies_))}
+    v_matrix = np.full((len(kept_users), len(kept_movies)), np.nan)
+    for rating in ratings.itertuples(index=False):
+        x = users_index.get(rating.user)
+        y = movies_index.get(rating.movie)
+        if x is not None and y is not None:
+            v_matrix[x, y] = rating.rate
 
-v_matrix = np.zeros(shape=(num_users, num_movies))
-v_matrix[:] = np.nan
-for i in range(num_ratings):
-    if ratings.user[i] in users_ and ratings.movie[i] in movies_:
-        x = users_index[ratings.user[i]]
-        y = movies_index[ratings.movie[i]]
-        v_matrix[x, y] = ratings.rate[i]
+    if np.any(np.all(np.isnan(v_matrix), axis=1)) or np.any(np.all(np.isnan(v_matrix), axis=0)):
+        raise ValueError('Filtering produced a buyer or movie with no observed ratings.')
 
-# ---
-# do matrix completion by iterative soft thresholding of SVD decompositions with fancyimpute
-# ---
+    # Complete the matrix by iterative soft-thresholded SVD, then retain the
+    # rating scale used by the original experiment.
+    filled = SoftImpute().fit_transform(v_matrix)
+    output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    result = np.round(np.clip(filled, 0, 10), 3)
+    np.save(output, result)
+    return result
 
-X_filled_softimpute = SoftImpute().fit_transform(v_matrix)
-np.save('../data/movie_rating.npy', np.round(np.minimum(np.maximum(X_filled_softimpute, 0), 10), 3))
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Download and preprocess MovieTweetings 200K.')
+    parser.add_argument('--base-url', default=DEFAULT_URL)
+    parser.add_argument('--output', type=Path, default=REPO_ROOT / 'data' / 'movie_rating.npy')
+    parser.add_argument('--min-ratings', type=int, default=50)
+    args = parser.parse_args()
+    process_movie_data(args.base_url, args.output, args.min_ratings)

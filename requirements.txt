@@ -1,7 +1,11 @@
-cvxpy
-fancyimpute
-matplotlib
-mosek
-numpy
-pandas
-scipy
+# Versions used for the verified Python 3.12.2 setup.
+numpy==1.26.4
+scipy==1.13.1
+pandas==2.2.2
+matplotlib==3.8.4
+cvxpy==1.6.0
+fancyimpute==0.7.0
+
+# Recommended reference solver. A license is optional because the code falls
+# back to CLARABEL/SCS when MOSEK is unavailable.
+mosek==11.2.4

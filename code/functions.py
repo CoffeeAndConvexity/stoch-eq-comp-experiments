@@ -1,6 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+import os
+from pathlib import Path
+import shutil
 
 '''
 Simulate a market instance
@@ -151,4 +154,32 @@ def store_data(data, cost, Phi, dualPhi, ug, pg):
 
 def store_in_cvx(data, path):
     df = pd.DataFrame(data)
-    df.to_csv(path)
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(
+        f'.{destination.name}.{os.getpid()}.tmp'
+    )
+    try:
+        df.to_csv(temporary)
+        # Atomic replacement prevents --skip-existing from treating a CSV
+        # interrupted halfway through writing as a completed result.
+        os.replace(temporary, destination)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def copy_result(source, destination):
+    """Copy a completed result without exposing a partial destination."""
+    source = Path(source)
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(
+        f'.{destination.name}.{os.getpid()}.tmp'
+    )
+    try:
+        shutil.copyfile(source, temporary)
+        os.replace(temporary, destination)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
